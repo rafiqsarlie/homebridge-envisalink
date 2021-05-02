@@ -33,7 +33,6 @@ function EnvisalinkPlatform(log, config) {
     this.log = log;
 
     this.platformPartitionAccessories = [];
-    this.platformPanicButtonAccessories = [];
     this.platformZoneAccessories = [];
     this.platformProgramAccessories = [];
 
@@ -57,10 +56,6 @@ function EnvisalinkPlatform(log, config) {
             partition.pin = config.pin;
             var accessory = new EnvisalinkAccessory(this.log, "partition", partition, i + 1);
             this.platformPartitionAccessories.push(accessory);
-
-            // XXX add panic buttons
-            var panicButtonAccessory = new EnvisalinkAccessory(this.log, "panic", partition, i + 1);
-            this.platformProgramAccessories.push(panicButtonAccessory);
         }
         this.platformZoneAccessoryMap = {};
 
@@ -271,8 +266,6 @@ EnvisalinkPlatform.prototype.partitionUpdate = function (data) {
     try {
         var watchevents = ['601', '602', '609', '610', '650', '651', '652', '654', '656', '657'];
 
-        this.log.info('XXX partitionUpdate:', data)
-
         var partition = this.platformPartitionAccessories[data.partition - 1];
         if (partition) {
             partition.status = Object.assign({}, elink.tpicommands[data.code]);
@@ -294,23 +287,17 @@ EnvisalinkPlatform.prototype.partitionUpdate = function (data) {
                 } else if (data.code == "652" || data.code == "654" || data.code == "655") { //Armed, Alarm, Disarmed
 
                     partition.getAlarmState(function (nothing, resultat) {
-                        // XXX partition.currentState is unused (maybe in smoke alarm???)
                         if (partition.currentState !== undefined) {
                             delete partition.currentState;
                         }
 
                         partition.log.info('Set alarm state on partition', partition.partition, partition.name, 'to', resultat, serviceSecurityStateDescription[resultat]);
                         partition.lastTargetState = resultat;
-                        // XXX i think setting target state is confusing things
-                        // enableSet = false;
-                        // accservice.getCharacteristic(Characteristic.SecuritySystemTargetState).setValue(resultat);
-                        // enableSet = true;
+                        enableSet = false;
+                        accservice.getCharacteristic(Characteristic.SecuritySystemTargetState).setValue(resultat);
+                        enableSet = true;
                         accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(resultat);
                     });
-                    // } else if (data.code == "650") { // XXX
-                    //     accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(Characteristic.SecuritySystemCurrentState.DISARMED);
-                    // } else if (data.code == "651") { // XXX
-                    //     accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED);
                 } else if (data.code == "626" || data.code == "650" || data.code == "651" || data.code == "653") { //Ready, Not Ready, Ready Force ARM
                     var self = this;
                     partition.getReadyState(function (nothing, resultat) {
@@ -369,7 +356,7 @@ function EnvisalinkAccessory(log, accessoryType, config, partition, zone) {
         service
             .getCharacteristic(Characteristic.SecuritySystemTargetState)
             .setProps({ validValues: targetStates })
-            .on('get', this.getAlarmState.bind(this))
+            .on('get', this.getAlarmTargetState.bind(this))
             .on('set', this.setAlarmState.bind(this));
         service
             .addCharacteristic(Characteristic.ObstructionDetected)
@@ -405,34 +392,11 @@ function EnvisalinkAccessory(log, accessoryType, config, partition, zone) {
             .getCharacteristic(Characteristic.SmokeDetected)
             .on('get', this.getSmokeStatus.bind(this));
         this.services.push(service);
-        // } XXX
-    } else if (this.accessoryType == "panic") {
-        var service = new Service.Switch(this.name + "Panic Button");
-        service
-            .getCharacteristic(Characteristic.On)
-            .on('get', this.getPanicButton.bind(this))
-            .on('get', this.setPanicButton.bind(this));
-        this.services.push(service);
     }
 }
 
 EnvisalinkAccessory.prototype.getServices = function () {
     return this.services;
-}
-
-EnvisalinkAccessory.prototype.getPanicButton = function (callback) {
-    // const value =  partitionService.getCharacteristic(Characteristic.SecuritySystemTargetState).getValue(
-    // const value = this.sirenHomeSwitchService.getCharacteristic(Characteristic.On).value;
-    callback(null, false);
-}
-
-EnvisalinkAccessory.prototype.setPanicButton = function (value, callback) {
-    // this.triggerIfModeSet÷(Characteristic.SecuritySystemCurrentState.STAY_ARM, value, callback);
-    callback(null, value);
-}
-
-EnvisalinkAccessory.prototype.getMotionStatus = function (callback) {
-    callback(null)
 }
 
 EnvisalinkAccessory.prototype.getMotionStatus = function (callback) {
@@ -453,6 +417,13 @@ EnvisalinkAccessory.prototype.getReadyState = function (callback) {
     }
     callback(null, status);
 }
+
+EnvisalinkAccessory.prototype.getAlarmTargetState = function (callback) {
+    var targetState = this.lastTargetState || Characteristic.SecuritySystemCurrentState.DISARMED;
+    callback(null, targetState);
+}
+
+
 EnvisalinkAccessory.prototype.getAlarmState = function (callback) {
     var currentState = this.status;
     //default to last state or set to disarmed if not previously set
@@ -477,6 +448,7 @@ EnvisalinkAccessory.prototype.getAlarmState = function (callback) {
 }
 
 EnvisalinkAccessory.prototype.setAlarmState = function (state, callback) {
+    this.lastTargetState = state;
     this.addDelayedEvent('alarm', state, callback);
 }
 
