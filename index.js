@@ -294,7 +294,7 @@ EnvisalinkPlatform.prototype.partitionUpdate = function (data) {
                         }
 
                         partition.log.info('Set alarm state on partition', partition.partition, partition.name, 'to', resultat, serviceSecurityStateDescription[resultat]);
-                        partition.lastTargetState = resultat;
+                        partition.lastTargetStateActual = resultat;
                         enableSet = false;
                         accservice.getCharacteristic(Characteristic.SecuritySystemTargetState).setValue(resultat);
                         enableSet = true;
@@ -342,7 +342,10 @@ function EnvisalinkAccessory(log, accessoryType, config, partition, zone) {
         var targetStateCharacteristic = service.getCharacteristic(Characteristic.SecuritySystemTargetState);
         var targetStates = targetStateCharacteristic.props.validValues;
 
-        var disabledModes = ['NIGHT_ARM'];
+        // XXX disabling night mode
+        // TODO must set as config option
+        // var disabledModes = ['NIGHT_ARM'];
+        var disabledModes = [];
         var disabledTargetStates = [];
 
         for (let disabledMode of disabledModes) {
@@ -422,7 +425,7 @@ EnvisalinkAccessory.prototype.getReadyState = function (callback) {
 EnvisalinkAccessory.prototype.getAlarmState = function (callback) {
     var currentState = this.status;
     //default to last state or set to disarmed if not previously set
-    var status = (this.lastTargetState !== undefined) ? this.lastTargetState : Characteristic.SecuritySystemCurrentState.DISARMED;
+    var status = this.lastTargetStateActual || Characteristic.SecuritySystemCurrentState.DISARMED;
 
     if (currentState) {
         if (currentState.send == 'alarm') { // 654 Partition in Alarm
@@ -432,7 +435,13 @@ EnvisalinkAccessory.prototype.getAlarmState = function (callback) {
         } else if (currentState.code == '652') {
             //0: AWAY, 1: STAY, 2:  ZERO-ENTRY-AWAY, 3:  ZERO-ENTRY-STAY
             if (currentState.mode === '1' || currentState.mode === '3') {
-                status = Characteristic.SecuritySystemCurrentState.STAY_ARM;
+                // XXX maintaining night/stay mode in ui
+                if (this.lastTargetStateRequested && this.lastTargetStateRequested == Characteristic.SecuritySystemCurrentState.NIGHT_ARM) {
+                    status = Characteristic.SecuritySystemCurrentState.NIGHT_ARM;
+                }
+                else {
+                    status = Characteristic.SecuritySystemCurrentState.STAY_ARM;
+                }
             } else {
                 status = Characteristic.SecuritySystemCurrentState.AWAY_ARM;
             }
@@ -443,6 +452,8 @@ EnvisalinkAccessory.prototype.getAlarmState = function (callback) {
 }
 
 EnvisalinkAccessory.prototype.setAlarmState = function (state, callback) {
+    // XXX attempting to maintain night/stay mode in ui
+    this.lastTargetStateRequested = state;
     this.addDelayedEvent('alarm', state, callback);
 }
 
