@@ -25,13 +25,13 @@
     "homebridge": ">=0.2.0"
   },
   "dependencies": {
+    "dateformat": ">=1.0.12",
     "net": ">=1.0",
-    "nodealarmproxy": "1.0.1",
-    "dateformat": ">=1.0.12"
+    "nodealarmproxy": "1.0.1"
   },
   "homepage": "https://github.com/dustindclark/homebridge-envisalink#readme",
   "funding": {
-    "type" : "paypal",
-    "url" : "https://paypal.me/dustindclark"
+    "type": "paypal",
+    "url": "https://paypal.me/dustindclark"
   }
 }
