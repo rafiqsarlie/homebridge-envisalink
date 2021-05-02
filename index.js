@@ -284,8 +284,9 @@ EnvisalinkPlatform.prototype.partitionUpdate = function (data) {
                     this.log.info('Exit delay on partition', data.partition, partition.name);
                 } else if (data.code == "657") { //entry-delay
                     this.log.info('Entry delay on partition', data.partition, partition.name);
-                } else if (data.code == "652" || data.code == "654" || data.code == "655") { //Armed, Alarm, Disarmed
-
+                } else if (data.code == "654") { // alarm
+                    accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED);
+                } else if (data.code == "652" || data.code == "655") { //Armed, Disarmed
                     partition.getAlarmState(function (nothing, resultat) {
                         if (partition.currentState !== undefined) {
                             delete partition.currentState;
@@ -293,9 +294,10 @@ EnvisalinkPlatform.prototype.partitionUpdate = function (data) {
 
                         partition.log.info('Set alarm state on partition', partition.partition, partition.name, 'to', resultat, serviceSecurityStateDescription[resultat]);
                         partition.lastTargetState = resultat;
-                        enableSet = false;
+                        // XXX 
+                        // enableSet = false;
                         accservice.getCharacteristic(Characteristic.SecuritySystemTargetState).setValue(resultat);
-                        enableSet = true;
+                        // enableSet = true;
                         accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(resultat);
                     });
                 } else if (data.code == "626" || data.code == "650" || data.code == "651" || data.code == "653") { //Ready, Not Ready, Ready Force ARM
@@ -425,26 +427,27 @@ EnvisalinkAccessory.prototype.getAlarmTargetState = function (callback) {
 
 
 EnvisalinkAccessory.prototype.getAlarmState = function (callback) {
-    var currentState = this.status;
-    //default to last state or set to disarmed if not previously set
-    var status = (this.lastTargetState !== undefined) ? this.lastTargetState : Characteristic.SecuritySystemCurrentState.DISARMED;
+    //default to last current state or set to disarmed if not previously set
+    var state = this.lastTargetState || Characteristic.SecuritySystemCurrentState.DISARMED;
 
-    if (currentState) {
-        if (currentState.send == 'alarm') { // 654 Partition in Alarm
-            status = Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED;
-        } else if (currentState.send == 'disarmed') { // 655 Partition Disarmed, 751 Special Opening
-            status = Characteristic.SecuritySystemCurrentState.DISARMED;
-        } else if (currentState.code == '652') {
+    // only change to new state when partition status is armed, disarmed or alarm
+    var currentStatus = this.status;
+    if (currentStatus) {
+        if (currentStatus.send == 'alarm') { // 654 Partition in Alarm
+            state = Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED;
+        } else if (currentStatus.send == 'disarmed') { // 655 Partition Disarmed, 751 Special Opening
+            state = Characteristic.SecuritySystemCurrentState.DISARMED;
+        } else if (currentStatus.code == '652') {
             //0: AWAY, 1: STAY, 2:  ZERO-ENTRY-AWAY, 3:  ZERO-ENTRY-STAY
-            if (currentState.mode === '1' || currentState.mode === '3') {
-                status = Characteristic.SecuritySystemCurrentState.STAY_ARM;
+            if (currentStatus.mode === '1' || currentStatus.mode === '3') {
+                state = Characteristic.SecuritySystemCurrentState.STAY_ARM;
             } else {
-                status = Characteristic.SecuritySystemCurrentState.AWAY_ARM;
+                state = Characteristic.SecuritySystemCurrentState.AWAY_ARM;
             }
         }
     }
 
-    callback(null, status);
+    callback(null, state);
 }
 
 EnvisalinkAccessory.prototype.setAlarmState = function (state, callback) {
@@ -477,10 +480,12 @@ EnvisalinkAccessory.prototype.getSmokeStatus = function (callback) {
 }
 
 EnvisalinkAccessory.prototype.processAlarmState = function (nextEvent, callback) {
+    this.log.info('XXX processAlarmState nextEvent', nextEvent);
     try {
         if (nextEvent.enableSet == true) {
             if (nextEvent.data !== Characteristic.SecuritySystemCurrentState.DISARMED && this.status && this.status.code === '651') {
                 var accservice = this.getServices()[0];
+                this.log.info('XXX processAlarmState seting target state to disarmed');
                 accservice.getCharacteristic(Characteristic.SecuritySystemTargetState).setValue(Characteristic.SecuritySystemCurrentState.DISARMED);
                 nextEvent.callback(null, Characteristic.SecuritySystemCurrentState.DISARMED);
                 return;
@@ -502,6 +507,7 @@ EnvisalinkAccessory.prototype.processAlarmState = function (nextEvent, callback)
                 var self = this;
                 nap.manualCommand(command, function (msg) {
                     if (msg === '024') {
+                        self.log.info('XXX processAlarmState manualCommand msg', msg);
                         if (nextEvent.attempts > 5) {
                             nextEvent.callback(null);
                             callback();
@@ -603,6 +609,7 @@ EnvisalinkAccessory.prototype.processDelayedEvents = function () {
                     setTimeout(this.processDelayedEvents.bind(this), 0);
                 }
             };
+            this.log.info('XXX processDelayedEvent', nextEvent);
             if (nextEvent.type === 'alarm') {
                 this.processAlarmState(nextEvent, callback.bind(this));
             } else if (nextEvent.type === 'time') {
