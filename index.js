@@ -287,15 +287,17 @@ EnvisalinkPlatform.prototype.partitionUpdate = function (data) {
                 } else if (data.code == "654") { //Alarm
                     accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED);
                 } else if (data.code == "652" || data.code == "655") { //Armed, Disarmed
-                    var currentState = partition.getCurrentState(); // this should return a valid current state
-                    partition.log.info('Set alarm state on partition', partition.partition, partition.name, 'to', currentState, serviceSecurityStateDescription[currentState]);
+                    var currentState = partition.getCurrentState();
                     partition.lastTargetState = currentState;
+                    partition.log.info('Set alarm state on partition', partition.partition, partition.name, 'to', currentState, serviceSecurityStateDescription[currentState]);
                     enableSet = false;
                     accservice.getCharacteristic(Characteristic.SecuritySystemTargetState).setValue(currentState);
                     enableSet = true;
                     accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(currentState);
                 } else if (data.code == "626" || data.code == "650" || data.code == "651" || data.code == "653") { //Ready, Not Ready, Ready Force ARM
                     var self = this;
+                    var currentState = partition.getCurrentState();
+                    partition.lastTargetState = currentState;
                     partition.getReadyState(function (nothing, resultat) {
                         self.log.info('Setting obstructed', resultat, 'on partition', data.partition, partition.name);
                         accservice.getCharacteristic(Characteristic.ObstructionDetected).setValue(resultat);
@@ -417,16 +419,16 @@ EnvisalinkAccessory.prototype.getReadyState = function (callback) {
     callback(null, status);
 }
 
-EnvisalinkAccessory.prototype.getCurrentState = function () {
+EnvisalinkAccessory.prototype.getCurrentState = function (status) {
     var state;
     var currentStatus = this.status;
 
     if (currentStatus) {
         if (currentStatus.send == 'alarm') { // 654 Partition in Alarm
             state = Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED;
-        } else if (currentStatus.send == 'disarmed') { // 655 Partition Disarmed, 751 Special Opening
+        } else if (currentStatus.code == '650' || currentStatus.send == 'disarmed') { // 650 Partition Ready, 655 Partition Disarmed, 751 Special Opening
             state = Characteristic.SecuritySystemCurrentState.DISARMED;
-        } else if (currentStatus.code == '652') {
+        } else if (currentStatus.code == '652') { // 652 Partition Armed
             //0: AWAY, 1: STAY, 2:  ZERO-ENTRY-AWAY, 3:  ZERO-ENTRY-STAY
             if (currentStatus.mode === '1' || currentStatus.mode === '3') {
                 state = Characteristic.SecuritySystemCurrentState.STAY_ARM;
