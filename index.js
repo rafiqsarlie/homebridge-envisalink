@@ -287,19 +287,13 @@ EnvisalinkPlatform.prototype.partitionUpdate = function (data) {
                 } else if (data.code == "654") { //Alarm
                     accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED);
                 } else if (data.code == "652" || data.code == "655") { //Armed, Disarmed
-
-                    partition.getAlarmState(function (nothing, resultat) {
-                        if (partition.currentState !== undefined) {
-                            delete partition.currentState;
-                        }
-
-                        partition.log.info('Set alarm state on partition', partition.partition, partition.name, 'to', resultat, serviceSecurityStateDescription[resultat]);
-                        partition.lastTargetStateActual = resultat;
-                        enableSet = false;
-                        accservice.getCharacteristic(Characteristic.SecuritySystemTargetState).setValue(resultat);
-                        enableSet = true;
-                        accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(resultat);
-                    });
+                    var currentState = partition.getCurrentState(); // this should return a valid current state
+                    partition.log.info('Set alarm state on partition', partition.partition, partition.name, 'to', currentState, serviceSecurityStateDescription[currentState]);
+                    partition.lastTargetState = currentState;
+                    enableSet = false;
+                    accservice.getCharacteristic(Characteristic.SecuritySystemTargetState).setValue(currentState);
+                    enableSet = true;
+                    accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(currentState);
                 } else if (data.code == "626" || data.code == "650" || data.code == "651" || data.code == "653") { //Ready, Not Ready, Ready Force ARM
                     var self = this;
                     partition.getReadyState(function (nothing, resultat) {
@@ -344,8 +338,8 @@ function EnvisalinkAccessory(log, accessoryType, config, partition, zone) {
 
         // XXX disabling night mode
         // TODO must set as config option
-        // var disabledModes = ['NIGHT_ARM'];
-        var disabledModes = [];
+        var disabledModes = ['NIGHT_ARM'];
+        // var disabledModes = [];
         var disabledTargetStates = [];
 
         for (let disabledMode of disabledModes) {
@@ -361,8 +355,8 @@ function EnvisalinkAccessory(log, accessoryType, config, partition, zone) {
         service
             .getCharacteristic(Characteristic.SecuritySystemTargetState)
             .setProps({ validValues: targetStates })
-            .on('get', this.getAlarmState.bind(this))
-            .on('set', this.setAlarmState.bind(this));
+            .on('get', this.getAlarmTargetState.bind(this))
+            .on('set', this.setAlarmTargetState.bind(this));
         service
             .addCharacteristic(Characteristic.ObstructionDetected)
             .on('get', this.getReadyState.bind(this));
@@ -422,38 +416,52 @@ EnvisalinkAccessory.prototype.getReadyState = function (callback) {
     }
     callback(null, status);
 }
-EnvisalinkAccessory.prototype.getAlarmState = function (callback) {
-    var currentState = this.status;
-    //default to last state or set to disarmed if not previously set
-    var status = this.lastTargetStateActual || Characteristic.SecuritySystemCurrentState.DISARMED;
 
-    if (currentState) {
-        if (currentState.send == 'alarm') { // 654 Partition in Alarm
-            status = Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED;
-        } else if (currentState.send == 'disarmed') { // 655 Partition Disarmed, 751 Special Opening
-            status = Characteristic.SecuritySystemCurrentState.DISARMED;
-        } else if (currentState.code == '652') {
+EnvisalinkAccessory.prototype.getCurrentState = function () {
+    var state;
+    var currentStatus = this.status;
+
+    if (currentStatus) {
+        if (currentStatus.send == 'alarm') { // 654 Partition in Alarm
+            state = Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED;
+        } else if (currentStatus.send == 'disarmed') { // 655 Partition Disarmed, 751 Special Opening
+            state = Characteristic.SecuritySystemCurrentState.DISARMED;
+        } else if (currentStatus.code == '652') {
             //0: AWAY, 1: STAY, 2:  ZERO-ENTRY-AWAY, 3:  ZERO-ENTRY-STAY
-            if (currentState.mode === '1' || currentState.mode === '3') {
-                // XXX maintaining night/stay mode in ui
-                if (this.lastTargetStateRequested && this.lastTargetStateRequested == Characteristic.SecuritySystemCurrentState.NIGHT_ARM) {
-                    status = Characteristic.SecuritySystemCurrentState.NIGHT_ARM;
-                }
-                else {
-                    status = Characteristic.SecuritySystemCurrentState.STAY_ARM;
-                }
+            if (currentStatus.mode === '1' || currentStatus.mode === '3') {
+                state = Characteristic.SecuritySystemCurrentState.STAY_ARM;
             } else {
-                status = Characteristic.SecuritySystemCurrentState.AWAY_ARM;
+                state = Characteristic.SecuritySystemCurrentState.AWAY_ARM;
             }
         }
     }
-
-    callback(null, status);
+    return state;
 }
 
-EnvisalinkAccessory.prototype.setAlarmState = function (state, callback) {
-    // XXX attempting to maintain night/stay mode in ui
-    this.lastTargetStateRequested = state;
+EnvisalinkAccessory.prototype.getAlarmTargetState = function (callback) {
+    //default to last state or set to disarmed if not previously set
+    var currentState = this.getCurrentState();
+
+    // target state cannot be alarm triggered
+    if (currentState === Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED) {
+        currentState = null;
+    }
+
+    var state = currentState || this.lastTargetState || Characteristic.SecuritySystemCurrentState.DISARMED;
+    this.log.info('XXX getAlarmTargetState', this.partition + ' state ' + state + ', current ' + currentState + ', lastTarget ' + this.lastTargetState);
+    callback(null, state);
+}
+
+EnvisalinkAccessory.prototype.getAlarmState = function (callback) {
+    //default to last state or set to disarmed if not previously set
+    var currentState = this.getCurrentState();
+    var state = currentState || this.lastTargetState || Characteristic.SecuritySystemCurrentState.DISARMED;
+    this.log.info('XXX getAlarmState', this.partition + ' state ' + state + ', current ' + currentState + ', lastTarget ' + this.lastTargetState);
+    callback(null, state);
+}
+
+EnvisalinkAccessory.prototype.setAlarmTargetState = function (state, callback) {
+    this.log.info('XXX setAlarmTargetState', state);
     this.addDelayedEvent('alarm', state, callback);
 }
 
