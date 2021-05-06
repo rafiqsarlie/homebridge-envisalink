@@ -31,13 +31,12 @@ module.exports = function (homebridge) {
 
 function EnvisalinkPlatform(log, config) {
     this.log = log;
-
     this.platformPartitionAccessories = [];
     this.platformZoneAccessories = [];
     this.platformProgramAccessories = [];
 
     if (!config || !config.host) {
-        this.log.info("Envisalink plugin is not configured.  Skipping.")
+        this.log("Envisalink plugin is not configured.  Skipping.")
         return;
     }
 
@@ -47,8 +46,24 @@ function EnvisalinkPlatform(log, config) {
     this.partitions = config.partitions ? config.partitions : [{ name: 'Alarm' }];
     this.zones = config.zones ? config.zones : [];
     this.userPrograms = config.userPrograms ? config.userPrograms : [];
+    this.enableVerboseLogging = config.enableVerboseLogging ? config.enableVerboseLogging : false;
+    this.enableDebugLogging = config.enableDebugLogging ? config.enableDebugLogging : false;
 
-    this.log.info("Configuring Envisalink platform,  Host: " + config.host + ", port: " + config.port + ", type: " + this.deviceType);
+    // over log.info to allow verbose logging to be set in config
+    this.log.info = (message, ...params) => {
+        if (this.enableVerboseLogging) {
+            this.log(message, ...params)
+        }
+    };
+
+    // debug logging
+    this.log.debug = (message, ...params) => {
+        if (this.enableDebugLogging) {
+            this.log("{}", message, ...params)
+        }
+    };
+
+    this.log("Configuring Envisalink platform,  Host: " + config.host + ", port: " + config.port + ", type: " + this.deviceType);
 
     try {
         for (var i = 0; i < this.partitions.length; i++) {
@@ -99,7 +114,7 @@ function EnvisalinkPlatform(log, config) {
             }
         }
 
-        this.log.info("Starting node alarm proxy...");
+        this.log("Starting node alarm proxy...");
         this.alarmConfig = {
             password: config.password,
             serverpassword: config.password,
@@ -114,10 +129,10 @@ function EnvisalinkPlatform(log, config) {
             atomicEvents: true,
             logging: false
         };
-        this.log.info("Zone Config: " + this.alarmConfig.zone);
-        this.log.info("User Program Config: " + this.alarmConfig.userPrograms);
+        this.log("Zone Config: " + this.alarmConfig.zone);
+        this.log("User Program Config: " + this.alarmConfig.userPrograms);
         this.alarm = nap.initConfig(this.alarmConfig);
-        this.log.info("Node alarm proxy started.  Listening for connections at: " + this.alarmConfig.serverhost + ":" + this.alarmConfig.serverport);
+        this.log("Node alarm proxy started.  Listening for connections at: " + this.alarmConfig.serverhost + ":" + this.alarmConfig.serverport);
         this.alarm.on('data', this.systemUpdate.bind(this));
         this.alarm.on('zoneupdate', this.zoneUpdate.bind(this));
         this.alarm.on('partitionupdate', this.partitionUpdate.bind(this));
@@ -138,7 +153,7 @@ function EnvisalinkPlatform(log, config) {
 }
 
 EnvisalinkPlatform.prototype.partitionUserUpdate = function (users) {
-    this.log.info('Partition User Update changed to: ', users);
+    this.log('Partition User Update changed to: ', users);
 }
 
 EnvisalinkPlatform.prototype.systemUpdate = function (data) {
@@ -198,7 +213,7 @@ EnvisalinkPlatform.prototype.systemUpdate = function (data) {
             for (var i = 0; i < this.platformPartitionAccessories.length; i++) {
                 var systemStatus = data.partition['' + (i + 1)];
                 if (systemStatus) {
-                    this.log.info('System status is:', systemStatus.code);
+                    this.log.debug('System status update', '' + (i + 1) + ':', systemStatus.code);
                     var code = systemStatus.code && systemStatus.code.substring(0, 3);
                     this.partitionUpdate({
                         partition: (i + 1),
@@ -271,23 +286,22 @@ EnvisalinkPlatform.prototype.partitionUpdate = function (data) {
             partition.status.mode = data.mode;
             partition.status.partition = data.partition;
 
-            this.log.info('Set status on partition', data.partition, partition.name,
-                'to', partition.status.code, partition.status.name,
+            this.log.debug('Partition status', data.partition + ':', partition.status.code, partition.status.name,
                 (partition.status.code == '652') ? 'mode ' + partition.status.mode : '');
 
             var accservice = (partition.getServices())[0];
 
             if (accservice) {
                 if (data.code == "656") { //exit delay
-                    this.log.info('Exit delay on partition', data.partition, partition.name);
+                    this.log('Exit delay on partition', data.partition, partition.name);
                 } else if (data.code == "657") { //entry-delay
-                    this.log.info('Entry delay on partition', data.partition, partition.name);
+                    this.log('Entry delay on partition', data.partition, partition.name);
                 } else if (data.code == "654") { //Alarm
                     accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED);
                 } else if (data.code == "652" || data.code == "655") { //Armed, Disarmed
                     var currentState = partition.getCurrentState();
                     partition.lastTargetState = currentState;
-                    partition.log.info('Set alarm state on partition', partition.partition, partition.name, 'to', currentState, serviceSecurityStateDescription[currentState]);
+                    partition.log('Alarm state on partition', partition.partition, partition.name, 'to', serviceSecurityStateDescription[currentState]);
                     enableSet = false;
                     accservice.getCharacteristic(Characteristic.SecuritySystemTargetState).setValue(currentState);
                     enableSet = true;
@@ -320,7 +334,7 @@ function EnvisalinkAccessory(log, accessoryType, config, partition, zone) {
         id += "." + zone;
     }
     this.uuid_base = uuid.generate(id);
-    this.log.info('Generated UUID ' + this.uuid_base + ' for accessory ID ' + id);
+    this.log('Generated UUID ' + this.uuid_base + ' for accessory ID ' + id);
     Accessory.call(this, this.name, this.uuid_base);
 
     this.accessoryType = accessoryType;
@@ -351,7 +365,7 @@ function EnvisalinkAccessory(log, accessoryType, config, partition, zone) {
 
         service
             .getCharacteristic(Characteristic.SecuritySystemCurrentState)
-            .on('get', this.getAlarmState.bind(this));
+            .on('get', this.getAlarmCurrentState.bind(this));
         service
             .getCharacteristic(Characteristic.SecuritySystemTargetState)
             .setProps({ validValues: targetStates })
@@ -442,30 +456,31 @@ EnvisalinkAccessory.prototype.getCurrentState = function (status) {
 }
 
 EnvisalinkAccessory.prototype.getAlarmTargetState = function (callback) {
-    //default to last state or set to disarmed if not previously set
-    var currentState = this.getCurrentState();
-    var returnState;
-
-    if (currentState === Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED) {
-        // target state cannot be alarm triggered so return last state and if not set then return disarmed
-        returnState = (this.lastTargetState ? this.lastTargetState : Characteristic.SecuritySystemCurrentState.DISARMED);
-    } else {
-        returnState = currentState || (this.lastTargetState ? this.lastTargetState : Characteristic.SecuritySystemCurrentState.DISARMED);
-    }
-    this.log.info('X getAlarmTargetState', this.partition + ' return ' + returnState + ', current ' + currentState + ', lastTarget ' + this.lastTargetState);
-    callback(null, returnState);
+    this.getAlarmState(true, callback);
 }
 
-EnvisalinkAccessory.prototype.getAlarmState = function (callback) {
+EnvisalinkAccessory.prototype.getAlarmCurrentState = function (callback) {
+    this.getAlarmState(false, callback);
+}
+
+EnvisalinkAccessory.prototype.getAlarmState = function (targetStateRequested, callback) {
     //default to last state or set to disarmed if not previously set
     var currentState = this.getCurrentState();
-    var returnState = currentState || (this.lastTargetState ? this.lastTargetState : Characteristic.SecuritySystemCurrentState.DISARMED);
-    this.log.info('X getAlarmState', this.partition + ' return ' + returnState + ', current ' + currentState + ', lastTarget ' + this.lastTargetState);
+
+    // target state cannot be alarm triggered so return last state and if not set then return disarmed
+    if (targetStateRequested && currentState === Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED) {
+        currentState = undefined;
+    }
+
+    // note state_armed == 0 so a conditional will return false for this, instead evaluate state where or not it is undefined
+    returnState = (currentState != undefined ? currentState : (this.lastTargetState != undefined ? this.lastTargetState : Characteristic.SecuritySystemCurrentState.DISARMED));
+
+    this.log.debug('Alarm', (targetStateRequested ? 'target' : 'current'), 'state', this.partition + ':', returnState, '(current ' + currentState + ', lastTarget ' + this.lastTargetState + ')');
     callback(null, returnState);
 }
 
 EnvisalinkAccessory.prototype.setAlarmTargetState = function (state, callback) {
-    this.log.info('XXX setAlarmTargetState', state);
+    this.log.debug('Set alarm target state', this.partition + ':', state);
     this.addDelayedEvent('alarm', state, callback);
 }
 
