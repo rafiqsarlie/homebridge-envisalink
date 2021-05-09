@@ -213,7 +213,7 @@ EnvisalinkPlatform.prototype.systemUpdate = function (data) {
             for (var i = 0; i < this.platformPartitionAccessories.length; i++) {
                 var systemStatus = data.partition['' + (i + 1)];
                 if (systemStatus) {
-                    this.log.debug('System status update', '' + (i + 1) + ':', systemStatus.code);
+                    this.log.debug('System status', '' + (i + 1) + ':', systemStatus.code);
                     var code = systemStatus.code && systemStatus.code.substring(0, 3);
                     this.partitionUpdate({
                         partition: (i + 1),
