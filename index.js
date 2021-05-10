@@ -310,7 +310,7 @@ EnvisalinkPlatform.prototype.partitionUpdate = function (data) {
                 } else if (data.code == "626" || data.code == "650" || data.code == "651" || data.code == "653") { //Ready, Not Ready, Ready Force ARM
                     var self = this;
                     var currentState = partition.getCurrentState();
-                    if ([undefined, "652", "655"].indexOf(partition.lastTargetState)) {
+                    if (partition.lastTargetState == undefined || partition.lastTargetState == "652" || partition.lastTargetState == "655") {
                         partition.log('Alarm state on', partition.name, '(' + partition.partition + ')', 'is', serviceSecurityStateDescription[currentState]);
                     }
                     partition.lastTargetState = currentState;
@@ -477,7 +477,7 @@ EnvisalinkAccessory.prototype.getAlarmState = function (targetStateRequested, ca
     }
 
     // note state_armed == 0 so a conditional will return false for this, instead evaluate state where or not it is undefined
-    returnState = (currentState != undefined ? currentState : (this.lastTargetState != undefined ? this.lastTargetState : Characteristic.SecuritySystemCurrentState.DISARMED));
+    returnState = (currentState !== undefined ? currentState : (this.lastTargetState !== undefined ? this.lastTargetState : Characteristic.SecuritySystemCurrentState.DISARMED));
 
     this.log.debug('Alarm', (targetStateRequested ? 'target' : 'current'), 'state', this.partition + ':', returnState, '(current ' + currentState + ', lastTarget ' + this.lastTargetState + ')');
     callback(null, returnState);
