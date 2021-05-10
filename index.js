@@ -213,7 +213,7 @@ EnvisalinkPlatform.prototype.systemUpdate = function (data) {
             for (var i = 0; i < this.platformPartitionAccessories.length; i++) {
                 var systemStatus = data.partition['' + (i + 1)];
                 if (systemStatus) {
-                    this.log.debug('System status', '' + (i + 1) + ':', systemStatus.code);
+                    this.log.debug('System status' + ':', systemStatus.code);
                     var code = systemStatus.code && systemStatus.code.substring(0, 3);
                     this.partitionUpdate({
                         partition: (i + 1),
@@ -286,22 +286,23 @@ EnvisalinkPlatform.prototype.partitionUpdate = function (data) {
             partition.status.mode = data.mode;
             partition.status.partition = data.partition;
 
-            this.log.debug('Partition status', data.partition + ':', partition.status.code, partition.status.name,
+            this.log.debug('Partition', data.partition, 'status :', partition.status.code, partition.status.name,
                 (partition.status.code == '652') ? 'mode ' + partition.status.mode : '');
 
             var accservice = (partition.getServices())[0];
 
             if (accservice) {
                 if (data.code == "656") { //exit delay
-                    this.log('Exit delay on partition', data.partition, partition.name);
+                    this.log('Exit delay on', partition.name, '(' + partition.partition + ')');
                 } else if (data.code == "657") { //entry-delay
-                    this.log('Entry delay on partition', data.partition, partition.name);
+                    this.log('Entry delay on', partition.name, '(' + partition.partition + ')');
                 } else if (data.code == "654") { //Alarm
+                    partition.log('Alarm state on', partition.name, '(' + partition.partition + ')', 'is', serviceSecurityStateDescription[characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED]);
                     accservice.getCharacteristic(Characteristic.SecuritySystemCurrentState).setValue(Characteristic.SecuritySystemCurrentState.ALARM_TRIGGERED);
                 } else if (data.code == "652" || data.code == "655") { //Armed, Disarmed
                     var currentState = partition.getCurrentState();
                     partition.lastTargetState = currentState;
-                    partition.log('Alarm state on partition', partition.partition, partition.name, 'to', serviceSecurityStateDescription[currentState]);
+                    partition.log('Alarm state on', partition.name, '(' + partition.partition + ')', 'is', serviceSecurityStateDescription[currentState]);
                     enableSet = false;
                     accservice.getCharacteristic(Characteristic.SecuritySystemTargetState).setValue(currentState);
                     enableSet = true;
@@ -309,9 +310,12 @@ EnvisalinkPlatform.prototype.partitionUpdate = function (data) {
                 } else if (data.code == "626" || data.code == "650" || data.code == "651" || data.code == "653") { //Ready, Not Ready, Ready Force ARM
                     var self = this;
                     var currentState = partition.getCurrentState();
+                    if ([undefined, "652", "655"].indexOf(partition.lastTargetState)) {
+                        partition.log('Alarm state on', partition.name, '(' + partition.partition + ')', 'is', serviceSecurityStateDescription[currentState]);
+                    }
                     partition.lastTargetState = currentState;
                     partition.getReadyState(function (nothing, resultat) {
-                        self.log.info('Setting obstructed', resultat, 'on partition', data.partition, partition.name);
+                        self.log.info('Setting obstructed', resultat, 'on', partition.name, '(' + partition.partition + ')');
                         accservice.getCharacteristic(Characteristic.ObstructionDetected).setValue(resultat);
                     });
                 }
@@ -518,7 +522,7 @@ EnvisalinkAccessory.prototype.processAlarmState = function (nextEvent, callback)
                 return;
             }
 
-            this.log("Attempting to set alarm state on partition", this.partition, this.name, 'to', nextEvent.data, serviceSecurityStateDescription[nextEvent.data]);
+            this.log("Setting alarm state on", this.name, '(' + this.partition + ')', 'to', serviceSecurityStateDescription[nextEvent.data], '(' + nextEvent.data + ')');
             var command = null;
             if (nextEvent.data == Characteristic.SecuritySystemCurrentState.DISARMED) {
                 this.log("Disarming alarm with PIN.");
