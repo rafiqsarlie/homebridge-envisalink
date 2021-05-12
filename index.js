@@ -534,6 +534,33 @@ EnvisalinkAccessory.prototype.processAlarmState = function (nextEvent, callback)
                 this.log("Arming alarm to Away.");
                 command = "030" + this.partition;
             }
+
+            // working on this next to process multiple commands :-)
+            // var commands = [nextEvent.data + '1', nextEvent.data + '2', nextEvent.data + '3'];
+            //
+            //   // this function will process the first of each command remaining
+            //   var processCommands = function (commands, processNextCommand, callback) {
+            //     if (commands && commands.length > 0) {
+            //       nap.manualCommand(commands[0], function () {
+            //         console.log('commands',commands);
+            //         // todo handle error message arising or failed to process
+            //         commands.splice(0, 1); // remove first command;
+            //         // processNextCommand(commands, processNextCommand, callback);
+            //         setTimeout(processNextCommand.bind(this, commands, callback),100);
+            //       });
+            //     }
+            //     else {
+            //       callback();
+            //     }
+            //   }
+            //
+            //   // send same processCommands function to itself to the process the next command until complete
+            //   processCommands(commands, processCommands, function () {
+            //     // runs after all commands have run
+            //     nextEvent.callback(nextEvent.data);
+            //     callback();
+            //   });
+
             if (command) {
                 var self = this;
                 nap.manualCommand(command, function (msg) {
